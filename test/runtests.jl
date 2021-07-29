@@ -1,6 +1,7 @@
 using AbstractDifferentiation
 using Test, FiniteDifferences, LinearAlgebra
 using ForwardDiff
+using Zygote
 using Random
 Random.seed!(1234)
 
@@ -14,7 +15,7 @@ FDMBackend1() = FDMBackend1(central_fdm(5, 1))
 const fdm_backend1 = FDMBackend1()
 # Minimal interface
 AD.@primitive function jacobian(ab::FDMBackend1, f, xs...)
-    return jacobian(ab.alg, f, xs...)
+    return FDM.jacobian(ab.alg, f, xs...)
 end
 
 struct FDMBackend2{A} <: AD.AbstractFiniteDifference
@@ -116,6 +117,22 @@ AD.@primitive function pushforward_function(ab::ForwardDiffBackend2, f, xs...)
 end
 ##
 
+## Zygote
+struct ZygoteBackend1 <: AD.AbstractReverseMode end
+const zygote_backend1 = ZygoteBackend1()
+AD.@primitive function pullback_function(ab::ZygoteBackend1, f, xs...)
+    return function (vs)
+        # Supports only single output
+        _, back = Zygote.pullback(f, xs...)
+        if vs isa AbstractVector
+            back(vs)
+        else
+            @assert length(vs) == 1
+            back(vs[1])
+        end
+    end
+end
+##
 
 fder(x, y) = exp(y) * x + y * log(x)
 dfderdx(x, y) = exp(y) + y * 1/x
@@ -599,6 +616,40 @@ end
         @testset "Lazy Hessian" begin
             #@test_broken test_fdm_lazy_hessians(forwarddiff_backend1,testFDMbackend)
             #@test_broken test_fdm_lazy_hessians(forwarddiff_backend2,testFDMbackend)
+        end
+    end
+    @testset "Zygote" begin
+        @testset "Derivative" begin
+            test_fdm_derivatives(zygote_backend1,testFDMbackend)
+        end
+        @testset "Gradient" begin
+            test_fdm_gradients(zygote_backend1,testFDMbackend)
+        end
+        @testset "Jacobian" begin
+            test_fdm_jacobians(zygote_backend1,testFDMbackend)
+        end
+        @testset "Hessian" begin
+            # Fails due to setindex! in AbstractDifferentiation Hessian function
+            @test_broken test_fdm_hessians(zygote_backend1,testFDMbackend)
+        end
+        @testset "jvp" begin
+            test_fdm_jvp(zygote_backend1,testFDMbackend)
+        end
+        @testset "j′vp" begin
+            test_fdm_j′vp(zygote_backend1,testFDMbackend)
+        end
+        @testset "Lazy Derivative" begin
+            test_fdm_lazy_derivatives(zygote_backend1,testFDMbackend)
+        end
+        @testset "Lazy Gradient" begin
+            test_fdm_lazy_gradients(zygote_backend1,testFDMbackend)
+        end
+        @testset "Lazy Jacobian" begin
+            test_fdm_lazy_jacobians(zygote_backend1,testFDMbackend)
+        end
+        @testset "Lazy Hessian" begin
+            #@test_broken test_fdm_lazy_hessians(zygote_backend1,testFDMbackend)
+
         end
     end
 end
